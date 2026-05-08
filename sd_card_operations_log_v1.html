@@ -569,7 +569,7 @@
     const vals = [getVal(0), getVal(1), getVal(2)];
     const total = vals[0]+vals[1]+vals[2];
     if(total===0){ showToast('Nothing to save — all counts are 0.', 'error'); return; }
-    if(SCRIPT_URL === 'YOUR_APPS_SCRIPT_URL_HERE'){ showToast('Configure your Apps Script URL first.', 'error'); return; }
+    if(SCRIPT_URL === 'https://script.google.com/macros/s/AKfycbyltfByO6pqKj4fc9SPIpK2kZFm869l7azv7CjN4GYyexdRwCFZXYjMq5_05Ch9aWFeYg/exec'){ showToast('Configure your Apps Script URL first.', 'error'); return; }
     const now = new Date();
     const entry = {
       date: now.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'}),

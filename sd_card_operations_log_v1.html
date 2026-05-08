@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SD Card Operations Log v1</title>
+<style>
+  :root {
+    --bg-page:      #f5f5f3;
+    --bg-card:      #ffffff;
+    --bg-input:     #f9f9f8;
+    --bg-subtle:    #f1efe8;
+    --border:       #e4e4e0;
+    --border-mid:   #d3d1c7;
+    --text-primary: #2c2c2a;
+    --text-secondary:#5f5e5a;
+    --text-muted:   #888780;
+    --text-faint:   #b4b2a9;
+    --icon-blue-bg: #E6F1FB; --icon-blue-fg: #185FA5;
+    --icon-pur-bg:  #EEEDFE; --icon-pur-fg:  #534AB7;
+    --icon-grn-bg:  #EAF3DE; --icon-grn-fg:  #3B6D11;
+    --saved-bg:     #EAF3DE; --saved-fg:     #3B6D11;
+    --badge-bg:     #f1efe8; --badge-fg:     #5f5e5a;
+    --chart-empty:  #e4e4e0;
+    --chart-border: #ffffff;
+    --hist-head-bg: #f9f9f8;
+    --hist-row-alt: #fafaf9;
+    --tab-active:   #2c2c2a;
+  }
+  [data-theme="dark"] {
+    --bg-page:      #1a1a18;
+    --bg-card:      #242422;
+    --bg-input:     #2e2e2b;
+    --bg-subtle:    #2e2e2b;
+    --border:       #3a3a37;
+    --border-mid:   #4a4a46;
+    --text-primary: #f0efe8;
+    --text-secondary:#c8c7be;
+    --text-muted:   #888780;
+    --text-faint:   #555550;
+    --icon-blue-bg: #0c2a45; --icon-blue-fg: #85B7EB;
+    --icon-pur-bg:  #1e1a40; --icon-pur-fg:  #AFA9EC;
+    --icon-grn-bg:  #142408; --icon-grn-fg:  #97C459;
+    --saved-bg:     #142408; --saved-fg:     #97C459;
+    --badge-bg:     #2e2e2b; --badge-fg:     #c8c7be;
+    --chart-empty:  #3a3a37;
+    --chart-border: #242422;
+    --hist-head-bg: #1e1e1c;
+    --hist-row-alt: #262624;
+    --tab-active:   #f0efe8;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg-page);
+    color: var(--text-primary);
+    min-height: 100vh;
+    display: flex; align-items: flex-start; justify-content: center;
+    padding: 2rem 1rem;
+    transition: background 0.2s, color 0.2s;
+  }
+
+  .container {
+    background: var(--bg-card);
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    padding: 2rem;
+    width: 100%; max-width: 600px;
+    transition: background 0.2s, border-color 0.2s;
+  }
+
+
+
+  /* toast */
+  .toast {
+    position: fixed; top: 20px; left: 50%;
+    transform: translateX(-50%) translateY(-80px);
+    background: #2c2c2a; color: #fff;
+    padding: 10px 20px; border-radius: 10px;
+    font-size: 13px; font-weight: 500;
+    display: flex; align-items: center; gap: 8px;
+    transition: transform 0.3s cubic-bezier(.34,1.56,.64,1);
+    z-index: 999; white-space: nowrap;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+  .toast.success { background: #3B6D11; }
+  .toast.error   { background: #A32D2D; }
+
+  /* confirm dialog */
+  .overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5);
+    align-items: center; justify-content: center; z-index: 998;
+  }
+  .overlay.open { display: flex; }
+  .dialog {
+    background: var(--bg-card); border-radius: 14px;
+    border: 1px solid var(--border);
+    padding: 1.5rem; width: 320px; max-width: 90vw;
+  }
+  .dialog h3 { font-size: 15px; font-weight: 500; color: var(--text-primary); margin-bottom: 8px; }
+  .dialog p  { font-size: 13px; color: var(--text-muted); margin-bottom: 1.25rem; line-height: 1.5; }
+  .dialog-btns { display: flex; gap: 8px; justify-content: flex-end; }
+  .btn-cancel {
+    font-size: 13px; padding: 7px 14px; border-radius: 8px;
+    border: 1px solid var(--border-mid); background: var(--bg-card);
+    color: var(--text-secondary); cursor: pointer;
+  }
+  .btn-cancel:hover { background: var(--bg-subtle); }
+  .btn-confirm-del {
+    font-size: 13px; padding: 7px 14px; border-radius: 8px;
+    border: 1px solid #A32D2D; background: #A32D2D; color: #fff; cursor: pointer;
+  }
+  .btn-confirm-del:hover { background: #791F1F; }
+
+  /* tabs + toggle row */
+  .tab-row {
+    display: flex; align-items: center;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 1.75rem;
+    padding-bottom: 10px;
+  }
+  .tabs { display: flex; gap: 4px; flex: 1; }
+  .tab {
+    padding: 8px 16px; font-size: 13px; font-weight: 500; color: var(--text-muted);
+    cursor: pointer; border: none; background: none;
+    border-bottom: 2px solid transparent; margin-bottom: -11px;
+    transition: color 0.12s, border-color 0.12s;
+  }
+  .tab:hover { color: var(--tab-active); }
+  .tab.active { color: var(--tab-active); border-bottom-color: var(--tab-active); }
+  .pane { display: none; }
+  .pane.active { display: block; }
+
+  /* toggle switch */
+  .toggle-wrap { display: flex; align-items: center; gap: 6px; margin-bottom: -11px; }
+  .toggle-icon { font-size: 13px; color: var(--text-muted); display: flex; align-items: center; }
+  .toggle-switch { position: relative; width: 40px; height: 22px; cursor: pointer; }
+  .toggle-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+  .toggle-track {
+    position: absolute; inset: 0; background: var(--border-mid);
+    border-radius: 11px; transition: background 0.2s;
+  }
+  .toggle-switch input:checked + .toggle-track { background: #185FA5; }
+  .toggle-thumb {
+    position: absolute; top: 3px; left: 3px;
+    width: 16px; height: 16px; border-radius: 50%; background: #fff;
+    transition: transform 0.2s cubic-bezier(.34,1.3,.64,1); pointer-events: none;
+  }
+  .toggle-switch input:checked ~ .toggle-thumb { transform: translateX(18px); }
+
+  /* date row */
+  .date-row {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 1.5rem; flex-wrap: wrap; gap: 8px;
+  }
+  .date-label { font-size: 13px; color: var(--text-muted); }
+
+  .saved-pill {
+    display: none; align-items: center; gap: 4px;
+    font-size: 12px; color: var(--saved-fg);
+    background: var(--saved-bg); border-radius: 20px; padding: 3px 10px;
+  }
+  .saved-pill.visible { display: flex; }
+
+  .top-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  .ghost-btn {
+    font-size: 12px; padding: 7px 12px; border-radius: 8px;
+    border: 1px solid var(--border-mid); background: var(--bg-card);
+    color: var(--text-secondary);
+    cursor: pointer; display: flex; align-items: center; gap: 5px; white-space: nowrap;
+    transition: background 0.12s;
+  }
+  .ghost-btn:hover { background: var(--bg-subtle); }
+
+  .save-btn {
+    font-size: 12px; padding: 7px 14px; border-radius: 8px;
+    border: 1px solid #185FA5; background: #185FA5; color: #E6F1FB;
+    cursor: pointer; display: flex; align-items: center; gap: 5px; white-space: nowrap;
+  }
+  .save-btn:hover { background: #0C447C; border-color: #0C447C; }
+
+  .savedby-row {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 1.25rem; flex-wrap: wrap;
+  }
+  .savedby-row label { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+  .savedby-row input {
+    font-size: 13px; padding: 6px 10px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--bg-input); color: var(--text-primary);
+    outline: none; flex: 1; min-width: 120px; max-width: 220px;
+  }
+  .savedby-row input:focus { border-color: var(--text-muted); }
+
+  /* counter cards */
+  .cards { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 1.5rem; }
+  @media (max-width: 480px) {
+    .cards { grid-template-columns: 1fr; }
+    .card { flex-direction: row; gap: 16px; align-items: center; padding: 1rem 1.25rem; }
+    .card-label { text-align: left; }
+    .count-input { font-size: 36px; text-align: left; width: 80px; }
+    .card-btns { justify-content: flex-start; }
+    .cnt-btn { width: 44px; height: 44px; font-size: 22px; }
+  }
+  .card {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 1.25rem 1rem;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    transition: border-color 0.15s, background 0.2s;
+  }
+  .card:focus-within { border-color: var(--text-muted); }
+  .card-icon {
+    width: 46px; height: 46px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.2s;
+  }
+  .icon-blue   { background: var(--icon-blue-bg); color: var(--icon-blue-fg); }
+  .icon-purple { background: var(--icon-pur-bg);  color: var(--icon-pur-fg); }
+  .icon-green  { background: var(--icon-grn-bg);  color: var(--icon-grn-fg); }
+  .card-label { font-size: 12px; color: var(--text-muted); text-align: center; line-height: 1.4; width: 100%; }
+
+  .count-input {
+    width: 100%; text-align: center;
+    font-size: 48px; font-weight: 500; color: var(--text-primary);
+    border: none; border-radius: 8px; line-height: 1;
+    background: transparent; outline: none; padding: 4px 0 2px;
+    -moz-appearance: textfield; display: block;
+  }
+  .count-input::-webkit-outer-spin-button,
+  .count-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+  .card-btns { display: flex; gap: 8px; }
+  .cnt-btn {
+    width: 42px; height: 42px; border-radius: 10px;
+    border: 1px solid var(--border-mid); background: var(--bg-card); color: var(--text-primary);
+    font-size: 22px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    user-select: none; transition: background 0.1s, transform 0.1s;
+  }
+  .cnt-btn:hover { background: var(--bg-subtle); }
+  .cnt-btn:active { transform: scale(0.93); }
+
+  .divider { border: none; border-top: 1px solid var(--border); margin: 1.5rem 0; }
+
+  .totals { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+  .total-label { font-size: 13px; color: var(--text-muted); }
+  .total-val   { font-size: 16px; font-weight: 500; color: var(--text-primary); }
+
+  /* donut */
+  .chart-section { display: flex; align-items: center; gap: 2rem; }
+  @media (max-width: 440px) { .chart-section { flex-direction: column; align-items: flex-start; gap: 1.25rem; } }
+  .donut-wrap { position: relative; width: 170px; height: 170px; flex-shrink: 0; }
+  .donut-wrap canvas { width: 170px !important; height: 170px !important; }
+  .donut-center {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%,-50%);
+    text-align: center; pointer-events: none;
+  }
+  .donut-total-num { font-size: 30px; font-weight: 500; color: var(--text-primary); line-height: 1; }
+  .donut-total-lbl { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+  .legend { display: flex; flex-direction: column; gap: 14px; flex: 1; }
+  .leg-item { display: flex; align-items: center; gap: 10px; }
+  .leg-sq { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+  .leg-text { flex: 1; font-size: 13px; color: var(--text-secondary); }
+  .leg-val  { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+  .leg-pct  { font-size: 12px; color: var(--text-muted); margin-left: 4px; }
+
+  /* notes */
+  .notes-row { margin-top: 1.25rem; }
+  .notes-row label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 5px; }
+  .notes-row textarea {
+    width: 100%; font-size: 13px; padding: 8px 10px;
+    border-radius: 8px; border: 1px solid var(--border); background: var(--bg-input);
+    color: var(--text-primary); resize: vertical; min-height: 54px; outline: none;
+    font-family: inherit; line-height: 1.5; transition: background 0.2s, border-color 0.2s;
+  }
+  .notes-row textarea:focus { border-color: var(--text-muted); }
+
+  /* history */
+  .hist-toolbar {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 1.25rem; flex-wrap: wrap; gap: 8px;
+  }
+  .hist-title { font-size: 13px; color: var(--text-muted); }
+  .hist-empty { text-align: center; padding: 3rem 0; color: var(--text-faint); font-size: 13px; }
+  .hist-empty i { font-size: 32px; display: block; margin-bottom: 8px; opacity: 0.4; }
+
+  .hist-table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+  .hist-table th {
+    text-align: left; padding: 8px 10px;
+    font-size: 11px; font-weight: 500; color: var(--text-muted);
+    border-bottom: 1px solid var(--border); background: var(--hist-head-bg);
+    text-transform: uppercase; letter-spacing: .04em;
+  }
+  .hist-table td {
+    padding: 10px 10px; border-bottom: 1px solid var(--border);
+    color: var(--text-primary); vertical-align: middle;
+  }
+  .hist-table tr:last-child td { border-bottom: none; }
+  .hist-table tr:hover td { background: var(--hist-row-alt); }
+  .col-date { width: 36%; } .col-num { width: 12%; text-align: right; }
+  .col-total { width: 12%; text-align: right; } .col-del { width: 40px; text-align: right; white-space: nowrap; }
+  .notes-cell { font-size: 12px; color: var(--text-muted); font-style: italic; }
+
+  .del-btn {
+    background: none; border: none; cursor: pointer;
+    color: var(--text-faint); font-size: 16px; padding: 3px 5px; border-radius: 4px;
+  }
+  .del-btn:hover { color: #E24B4A; background: #FCEBEB; }
+
+  .badge-total {
+    display: inline-block; background: var(--badge-bg); color: var(--badge-fg);
+    border-radius: 20px; padding: 2px 8px; font-size: 11px; font-weight: 500;
+  }
+</style>
+</head>
+<body>
+
+<div class="toast" id="toast"></div>
+
+<div class="overlay" id="overlay">
+  <div class="dialog">
+    <h3>Delete this entry?</h3>
+    <p>This will permanently remove the saved day from your history. This can't be undone.</p>
+    <div class="dialog-btns">
+      <button class="btn-cancel" onclick="closeDialog()">Cancel</button>
+      <button class="btn-confirm-del" id="confirmDelBtn">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="tab-row">
+    <div class="tabs">
+      <button class="tab active" id="tab-today" onclick="switchTab('today',this)">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><circle cx="12" cy="16" r="1" fill="currentColor"/></svg>Today
+      </button>
+      <button class="tab" id="tab-history" onclick="switchTab('history',this)">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.5"/><polyline points="12 7 12 12 15 14"/></svg>History
+      </button>
+    </div>
+    <div class="toggle-wrap">
+      <span class="toggle-icon" id="moonIcon"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></span>
+      <label class="toggle-switch" title="Toggle dark mode" aria-label="Toggle dark mode">
+        <input type="checkbox" id="themeToggle" onchange="toggleTheme()">
+        <span class="toggle-track"></span>
+        <span class="toggle-thumb"></span>
+      </label>
+      <span class="toggle-icon" id="sunIcon" style="opacity:0.35"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg></span>
+    </div>
+  </div>
+
+  <!-- TODAY -->
+  <div class="pane active" id="pane-today">
+    <div class="date-row">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span class="date-label" id="dateLabel"></span>
+        <span class="saved-pill" id="savedPill"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Saved</span>
+      </div>
+      <div class="top-btns">
+        <button class="ghost-btn" onclick="resetAndSave()" title="Save today's counts to history, then reset to zero">
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.08-8.49"/></svg> Reset &amp; save
+        </button>
+        <button class="save-btn" onclick="saveDay()" title="Save a snapshot of today's counts to history">
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save day
+        </button>
+      </div>
+    </div>
+
+    <div class="savedby-row">
+      <label for="savedBy">Logged by</label>
+      <input type="text" id="savedBy" placeholder="Your name (optional)">
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <div class="card-icon icon-blue"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><path d="M2 12a20 20 0 0 0 20 0"/></svg></div>
+        <div class="card-label">Picked up</div>
+        <input class="count-input" id="count-0" type="number" min="0" placeholder="0" oninput="update()" aria-label="Picked up count">
+        <div class="card-btns">
+          <button class="cnt-btn" onclick="change(0,-1)">−</button>
+          <button class="cnt-btn" onclick="change(0,1)">+</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-icon icon-purple"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
+        <div class="card-label">Uploaded</div>
+        <input class="count-input" id="count-1" type="number" min="0" placeholder="0" oninput="update()" aria-label="Uploaded count">
+        <div class="card-btns">
+          <button class="cnt-btn" onclick="change(1,-1)">−</button>
+          <button class="cnt-btn" onclick="change(1,1)">+</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-icon icon-green"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="9 12 11 14 15 10"/></svg></div>
+        <div class="card-label">Emptied</div>
+        <input class="count-input" id="count-2" type="number" min="0" placeholder="0" oninput="update()" aria-label="Emptied count">
+        <div class="card-btns">
+          <button class="cnt-btn" onclick="change(2,-1)">−</button>
+          <button class="cnt-btn" onclick="change(2,1)">+</button>
+        </div>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <div class="totals">
+      <span class="total-label">Total processed today</span>
+      <span class="total-val" id="totalVal">0 cards</span>
+    </div>
+
+    <div class="chart-section">
+      <div class="donut-wrap">
+        <canvas id="donutChart" role="img" aria-label="Donut chart showing SD card breakdown"></canvas>
+        <div class="donut-center">
+          <div class="donut-total-num" id="donutTotal">0</div>
+          <div class="donut-total-lbl">total</div>
+        </div>
+      </div>
+      <div class="legend" id="legend"></div>
+    </div>
+
+    <div class="notes-row">
+      <label for="dayNotes">Notes for today <span style="color:var(--text-faint)">(optional)</span></label>
+      <textarea id="dayNotes" placeholder="e.g. Short day, 2 dashers out. SD-012 had a formatting issue."></textarea>
+    </div>
+  </div>
+
+  <!-- HISTORY -->
+  <div class="pane" id="pane-history">
+    <div class="hist-toolbar">
+      <span class="hist-title" id="histCount">0 days saved</span>
+      <button class="ghost-btn" onclick="exportCSV()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Export CSV
+      </button>
+    </div>
+    <div id="histBody"></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+  // ─── CONFIG ──────────────────────────────────────────────────────────────
+  // Paste your Apps Script Web App URL here after deploying
+  const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyltfByO6pqKj4fc9SPIpK2kZFm869l7azv7CjN4GYyexdRwCFZXYjMq5_05Ch9aWFeYg/exec';
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const LABELS = ['Picked up', 'Uploaded', 'Emptied'];
+  const COLORS = ['#185FA5', '#534AB7', '#3B6D11'];
+  const COLORS_DARK = ['#85B7EB', '#AFA9EC', '#97C459'];
+  const LS_THEME = 'sdlog_theme';
+  let history = [];
+  let pendingDeleteIdx = null;
+  let isDirty = false;
+  let darkMode = false;
+
+  async function apiCall(params) {
+    const url = SCRIPT_URL + '?' + new URLSearchParams(params).toString();
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Network error ' + res.status);
+    return res.json();
+  }
+
+  async function loadHistory() {
+    if (SCRIPT_URL === 'YOUR_APPS_SCRIPT_URL_HERE') {
+      showToast('Paste your Apps Script URL in the config to enable shared history.', 'error');
+      return;
+    }
+    setHistoryLoading(true);
+    try {
+      const data = await apiCall({ action: 'getHistory' });
+      if (data.error) throw new Error(data.error);
+      history = data.entries || [];
+      renderHistory();
+    } catch(e) {
+      showToast('Could not load history: ' + e.message, 'error');
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  function setHistoryLoading(on) {
+    document.getElementById('histBody').innerHTML = on
+      ? '<div class="hist-empty" style="padding:2rem 0"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" style=\"animation:spin 1s linear infinite;margin-bottom:8px;display:block;margin-left:auto;margin-right:auto\"><polyline points=\"23 4 23 10 17 10\"/><path d=\"M20.49 15a9 9 0 1 1-.08-8.49\"/></svg>Loading...</div>'
+      : '';
+  }
+
+  function loadFromStorage() {
+    try {
+      const theme = localStorage.getItem(LS_THEME);
+      if(theme === 'dark') {
+        darkMode = true;
+        document.documentElement.setAttribute('data-theme','dark');
+        document.getElementById('themeToggle').checked = true;
+        document.getElementById('moonIcon').style.opacity = '0.35';
+        document.getElementById('sunIcon').style.opacity  = '1';
+      }
+    } catch(e) {}
+  }
+
+  document.getElementById('dateLabel').textContent = new Date().toLocaleDateString('en-US', {
+    weekday: 'long', month: 'long', day: 'numeric'
+  });
+
+  const chart = new Chart(document.getElementById('donutChart'), {
+    type: 'doughnut',
+    data: {
+      labels: LABELS,
+      datasets: [{ data:[0,0,0], backgroundColor: COLORS, borderWidth:3, borderColor:'#ffffff', hoverOffset:5 }]
+    },
+    options: {
+      responsive: false, cutout: '68%',
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.parsed} card${ctx.parsed!==1?'s':''}` }}
+      }
+    }
+  });
+
+  function activeColors() { return darkMode ? COLORS_DARK : COLORS; }
+
+  function toggleTheme() {
+    darkMode = document.getElementById('themeToggle').checked;
+    document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light');
+    document.getElementById('moonIcon').style.opacity = darkMode ? '0.35' : '1';
+    document.getElementById('sunIcon').style.opacity  = darkMode ? '1'    : '0.35';
+    localStorage.setItem(LS_THEME, darkMode ? 'dark' : 'light');
+    update();
+  }
+
+  function getVal(i) { return Math.max(0, parseInt(document.getElementById('count-'+i).value)||0); }
+
+  function update() {
+    const vals = [getVal(0), getVal(1), getVal(2)];
+    const total = vals[0]+vals[1]+vals[2];
+    isDirty = total > 0;
+    const cols = activeColors();
+    const emptyCol = darkMode ? '#3a3a37' : '#e4e4e0';
+    const borderCol = darkMode ? '#242422' : '#ffffff';
+
+    document.getElementById('totalVal').textContent = total + ' card' + (total!==1?'s':'');
+    document.getElementById('donutTotal').textContent = total;
+    chart.data.datasets[0].data = total>0 ? vals : [1,1,1];
+    chart.data.datasets[0].backgroundColor = total>0 ? cols : [emptyCol,emptyCol,emptyCol];
+    chart.data.datasets[0].borderColor = total>0 ? borderCol : emptyCol;
+    chart.update();
+
+    document.getElementById('legend').innerHTML = LABELS.map((lbl,i) => {
+      const pct = total>0 ? Math.round(vals[i]/total*100) : 0;
+      return `<div class="leg-item">
+        <div class="leg-sq" style="background:${cols[i]}"></div>
+        <span class="leg-text">${lbl}</span>
+        <span class="leg-val">${vals[i]}<span class="leg-pct">${total>0?pct+'%':''}</span></span>
+      </div>`;
+    }).join('');
+  }
+
+  function change(i, delta) {
+    const inp = document.getElementById('count-'+i);
+    inp.value = Math.max(0, getVal(i)+delta);
+    update();
+  }
+
+  async function saveDay() {
+    const vals = [getVal(0), getVal(1), getVal(2)];
+    const total = vals[0]+vals[1]+vals[2];
+    if(total===0){ showToast('Nothing to save — all counts are 0.', 'error'); return; }
+    if(SCRIPT_URL === 'YOUR_APPS_SCRIPT_URL_HERE'){ showToast('Configure your Apps Script URL first.', 'error'); return; }
+    const now = new Date();
+    const entry = {
+      date: now.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'}),
+      time: now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}),
+      who:  document.getElementById('savedBy').value.trim(),
+      notes:document.getElementById('dayNotes').value.trim(),
+      picked:vals[0], uploaded:vals[1], emptied:vals[2], total
+    };
+    showToast('Saving...', '');
+    try {
+      const res = await apiCall({ action:'addEntry', ...entry });
+      if(res.error) throw new Error(res.error);
+      isDirty = false;
+      document.getElementById('savedPill').classList.add('visible');
+      await loadHistory();
+      showToast('Day saved to shared history', 'success');
+    } catch(e) {
+      showToast('Save failed: ' + e.message, 'error');
+    }
+  }
+
+  async function resetAndSave() {
+    const vals = [getVal(0), getVal(1), getVal(2)];
+    const total = vals[0]+vals[1]+vals[2];
+    if(SCRIPT_URL === 'YOUR_APPS_SCRIPT_URL_HERE'){ showToast('Configure your Apps Script URL first.', 'error'); return; }
+    if(total>0){
+      const now = new Date();
+      const entry = {
+        date: now.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'}),
+        time: now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}),
+        who:  document.getElementById('savedBy').value.trim(),
+        notes:document.getElementById('dayNotes').value.trim(),
+        picked:vals[0], uploaded:vals[1], emptied:vals[2], total
+      };
+      showToast('Saving...', '');
+      try {
+        const res = await apiCall({ action:'addEntry', ...entry });
+        if(res.error) throw new Error(res.error);
+        await loadHistory();
+      } catch(e) {
+        showToast('Save failed: ' + e.message, 'error'); return;
+      }
+    }
+    [0,1,2].forEach(i => document.getElementById('count-'+i).value='');
+    document.getElementById('dayNotes').value='';
+    document.getElementById('savedPill').classList.remove('visible');
+    isDirty = false;
+    update();
+    showToast('Day saved and counters reset', 'success');
+  }
+
+  function confirmDelete(idx) {
+    pendingDeleteIdx = idx;
+    document.getElementById('overlay').classList.add('open');
+    document.getElementById('confirmDelBtn').onclick = async () => {
+      const entry = history[pendingDeleteIdx];
+      closeDialog();
+      showToast('Deleting...', '');
+      try {
+        const res = await apiCall({ action:'deleteEntry', rowIndex: entry.rowIndex });
+        if(res.error) throw new Error(res.error);
+        await loadHistory();
+        showToast('Entry deleted');
+      } catch(e) {
+        showToast('Delete failed: ' + e.message, 'error');
+      }
+    };
+  }
+
+  function closeDialog() {
+    document.getElementById('overlay').classList.remove('open');
+    pendingDeleteIdx = null;
+  }
+
+  function renderHistory() {
+    const n = history.length;
+    document.getElementById('histCount').textContent = n+' day'+(n!==1?'s':'')+' saved';
+    document.getElementById('tab-history').innerHTML =
+      `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.5"/><polyline points="12 7 12 12 15 14"/></svg>History${n>0?' ('+n+')':''}`;
+    const body = document.getElementById('histBody');
+    if(n===0){
+      body.innerHTML = `<div class="hist-empty"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"32\" height=\"32\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"4\" width=\"18\" height=\"18\" rx=\"2\"/><line x1=\"16\" y1=\"2\" x2=\"16\" y2=\"6\"/><line x1=\"8\" y1=\"2\" x2=\"8\" y2=\"6\"/><line x1=\"3\" y1=\"10\" x2=\"21\" y2=\"10\"/><line x1=\"3\" y1=\"3\" x2=\"21\" y2=\"21\"/></svg>No days saved yet.<br>Use "Save day" or "Reset &amp; save" on the Today tab.</div>`;
+      return;
+    }
+    body.innerHTML = `<table class="hist-table">
+      <thead><tr>
+        <th class="col-date">Date &amp; time</th>
+        <th class="col-num" style="text-align:right">Picked</th>
+        <th class="col-num" style="text-align:right">Uploaded</th>
+        <th class="col-num" style="text-align:right">Emptied</th>
+        <th class="col-total" style="text-align:right">Total</th>
+        <th class="col-del"></th>
+      </tr></thead>
+      <tbody>${history.map((r,i)=>`
+        <tr>
+          <td>
+            <div style="font-weight:500;font-size:13px;">${r.date}</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:1px;">${r.time}${r.who?' · '+r.who:''}</div>
+            ${r.notes?`<div class="notes-cell" style="margin-top:2px;">${r.notes}</div>`:''}
+          </td>
+          <td style="text-align:right">${r.picked}</td>
+          <td style="text-align:right">${r.uploaded}</td>
+          <td style="text-align:right">${r.emptied}</td>
+          <td style="text-align:right"><span class="badge-total">${r.total}</span></td>
+          <td style="text-align:right"><button class="del-btn" onclick="confirmDelete(${i})" title="Delete entry"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button></td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+  }
+
+  function exportCSV() {
+    if(history.length===0){ showToast('No history to export yet.', 'error'); return; }
+    const rows = [['Date','Time','Logged by','Picked up','Uploaded','Emptied','Total','Notes'],
+      ...history.map(r=>[r.date,r.time,r.who,r.picked,r.uploaded,r.emptied,r.total,r.notes])];
+    const csv = rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const a = document.createElement('a');
+    a.href = 'data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+    a.download = 'sd_card_history.csv'; a.click();
+    showToast('CSV downloaded', 'success');
+  }
+
+  function switchTab(name, el) {
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
+    document.getElementById('pane-'+name).classList.add('active');
+    el.classList.add('active');
+    if(name === 'history') loadHistory();
+  }
+
+  let toastTimer;
+  function showToast(msg, type='') {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.className = 'toast'+(type?' '+type:'');
+    void t.offsetWidth; t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(()=>t.classList.remove('show'), 2800);
+  }
+
+  window.addEventListener('beforeunload', e => { if(isDirty){ e.preventDefault(); e.returnValue=''; } });
+  document.getElementById('overlay').addEventListener('click', e => { if(e.target===document.getElementById('overlay')) closeDialog(); });
+
+  loadFromStorage();
+  update();
+  renderHistory();
+</script>
+</body>
+</html>
